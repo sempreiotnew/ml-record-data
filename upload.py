@@ -11,7 +11,7 @@ app = Dash(__name__)
 app.title = "Sensor Dashboard"
 
 df_global = pd.DataFrame()
-
+df_selected_data = None 
 # Layout (unchanged, just added export button)
 app.layout = build_layout()
 
@@ -44,6 +44,7 @@ def update_dropdown(contents, filename):
         return [], None, ""
     df_global = parse_contents(contents, filename)
     print(df_global)
+    print(" --------------")
     if df_global is None:
         return [], None, "Failed to load file."
     if 'id' not in df_global.columns:
@@ -109,6 +110,7 @@ def store_selected_points(selectedData, current_sensor):
 )
 def update_graph(selected_id, stored_selected):
     fig = go.Figure()
+    fig.update_layout(dragmode='select')
     fig.update_layout(
         title=f"Gas Resistance (ID {selected_id})" if selected_id is not None else "Gas Resistance",
         plot_bgcolor='rgba(40,40,40,0.8)',
@@ -200,13 +202,14 @@ def update_graph(selected_id, stored_selected):
     Input('selected-points-store', 'data')
 )
 def update_metrics(selected_id, stored_selected):
+    global df_selected_data
     # If no data or no sensor selected -> show default
     if selected_id is None or df_global.empty:
-        return "No points selected."
+        return "No data selected."
 
     # If there is no stored valid selection for current sensor, show message
     if not stored_selected or stored_selected.get('sensor') != selected_id:
-        return "No points selected."
+        return "No data selected."
 
     # Build filtered dataframe
     df_filtered = df_global[df_global['id'] == selected_id].copy()
@@ -215,10 +218,6 @@ def update_metrics(selected_id, stored_selected):
     df_filtered = df_filtered.dropna(subset=['millis', 'gas_resistance'])
     if df_filtered.empty:
         return "No numeric data for this sensor."
-
-    # df_filtered = df_filtered.reset_index(drop=True)
-    # # use seconds for all time metrics
-    # df_filtered['time'] = (df_filtered['millis'] - df_filtered['millis'].iloc[0]) / 1000.0
 
     df_filtered = df_filtered.reset_index(drop=True)
     # KEEP absolute time in seconds
@@ -253,131 +252,30 @@ def update_metrics(selected_id, stored_selected):
     t = df_selected['time'].values.astype(float)
     millis = df_selected['millis'].values.astype(int)
 
+    df_selected_data = df_selected.copy()
     if len(y) == 0:
         return "Selected points do not match any data."
 
 
-    features_arr, feature_names = extract_features(
-            sensor_id=selected_id,
-            gas_arr=df_selected['gas_resistance'].values,
-            temp_arr=df_selected['temperature'].values,
-            pressure_arr=df_selected['pressure'].values,
-            humidity_arr=df_selected['humidity'].values,
-            millis_arr=df_selected['millis'].values
-    )
-        # Also show extracted features vector (pair names + values)
-    feature_items = []
-    for name, val in zip(feature_names, features_arr.flatten()):
-        # some features may be NaN (should be turned into 0.0 by your extract_features), but format safely:
-        try:
-            feature_items.append(html.Li(f"{name}: {val:.2f}"))
-        except Exception:
-            feature_items.append(html.Li(f"{name}: {val}"))
-
     return html.Div([
-        html.H4("Extracted Features:"),
-        html.Ul(feature_items)
+        html.H4("Selected data:"),
+        #html.Ul(feature_items)
     ]), build_table(df_selected)    
 
-# ----------------------------
-# EXPORT METRICS CALLBACK (modified to export the exact same fingerprint fields)
-# ----------------------------
+
 @app.callback(
-    Output('output-data-upload', 'children', allow_duplicate=True),
-    Input('export-button', 'n_clicks'),
-    State('selected-points-store', 'data'),
-    State('sensor-dropdown', 'options'),
-    State('curve-label-input', 'value'),  # <-- new label input
+    Output("download-xlsx", "data"),
+    Input("export-button", "n_clicks"),
+    State("df-selected-store", "data"),  # read df_selected from store
     prevent_initial_call=True
 )
-def export_metrics(n_clicks, stored_selected, dropdown_options, curve_label):
-    if stored_selected is None or ('indices' not in stored_selected and 'x_range' not in stored_selected):
-        return "No selection to export."
-
-    if df_global.empty:
-        return "No data loaded."
-
-    if not curve_label:
-        return "Please provide a label for this curve before exporting."
-
-    rows_to_export = []
-
-    # For each sensor, build df_selected using the stored selection (same behaviour as UI)
-    for sensor_opt in dropdown_options:
-        print(dropdown_options)
-        sensor_id = sensor_opt['value']
-        df_filtered = df_global[df_global['id'] == sensor_id].copy()
-        
-        df_filtered['gas_resistance'] = pd.to_numeric(df_filtered.get('gas_resistance'), errors='coerce')
-        df_filtered = df_filtered.dropna(subset=['gas_resistance'])
-        if df_filtered.empty:
-            continue
-
-        # Reset index to ensure it's sequential
-        df_filtered = df_filtered.reset_index(drop=True)
-        
-        # Use index as time (e.g., sample number)
-        df_filtered['time'] = df_filtered.index  # 0, 1, 2, 3, ...
-
-        # determine selected points for this sensor
-        if 'indices' in stored_selected:
-            idxs = [i for i in stored_selected['indices'] if 0 <= i < len(df_filtered)]
-            if not idxs:
-                continue
-            df_selected = (
-                df_filtered.iloc[idxs]
-                .copy()
-                .sort_values('time')
-                .reset_index(drop=True)
-            )
-        elif 'x_range' in stored_selected:
-            x_min, x_max = stored_selected['x_range']
-            df_selected = (
-                df_filtered[
-                    (df_filtered['time'] >= x_min) &
-                    (df_filtered['time'] <= x_max)
-                ]
-                .copy()
-                .sort_values('time')
-                .reset_index(drop=True)
-            )
-            if df_selected.empty:
-                continue
-        else:
-            continue
-
-
-        features_arr, feature_names = extract_features(
-            sensor_id=sensor_id,
-            gas_arr=df_selected['gas_resistance'].values,
-            temp_arr=df_selected['temperature'].values,
-            pressure_arr=df_selected['pressure'].values,
-            humidity_arr=df_selected['humidity'].values,
-            millis_arr=df_selected['millis'].values,   # pass ms -> extract_features computes t from this
-        )
-        
-
-        if not features_arr.any():
-            return "No data to export."
-
-        # Add label column
-        feature_names_with_label = feature_names + ['label']
-        
-        features_arr_with_label = np.array(
-            features_arr.tolist() + [curve_label],
-            dtype=object
-        )
-        print(features_arr_with_label)
-        
-        df_export = pd.DataFrame([features_arr_with_label], columns=feature_names_with_label)
-
-        file_exists = os.path.isfile("data.csv")
-        if file_exists:
-            df_export.to_csv("data.csv", mode='a', header=False, index=False)
-        else:
-            df_export.to_csv("data.csv", mode='w', header=True, index=False)
-
-    return f"Exported {len(rows_to_export)} sensors to 'data.csv'."
+def export_to_xlsx(n_clicks, data):
+    # Convert DataFrame to Excel bytes
+    global df_selected_data
+    
+    print(len(df_selected_data))
+    df_sorted = df_selected_data.sort_values('id')
+    print(len(df_sorted))
 
 
 if __name__ == '__main__':

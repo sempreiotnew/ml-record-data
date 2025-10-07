@@ -31,7 +31,7 @@ timestamp_str = datetime.now().strftime("%Y%m%d_%H%M%S")
 csv_file = f"{timestamp_str}.csv"
 annotation_file = f"{timestamp_str}.txt"
 
-csv_columns = ["id","index","millis","gas_index","mes_index","temperature","pressure","humidity","gas_resistance","status"]
+csv_columns = ["id","index","millis","gas_index","mes_index","temperature","pressure","humidity","gas_resistance","status","date_time"]
 
 # Initialize CSV
 with open(csv_file, mode="w", newline="") as f:
@@ -92,8 +92,10 @@ def serial_reader():
                 "pressure": pressure,
                 "humidity": humidity,
                 "gas_resistance": gas_resistance,
-                "status": status
+                "status": status,
+                "date_time" : datetime.now().strftime("%d-%m-%Y-%H:%M:%S%f")[:-2]
             }
+
             csv_columns_full = list(row.keys())
             with open(csv_file, mode="a", newline="") as f:
                 writer = csv.DictWriter(f, fieldnames=csv_columns_full)

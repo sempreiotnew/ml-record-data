@@ -6,3 +6,4 @@ scikit-learn
 pyserial
 cesium
 matplotlib
+openpyxl

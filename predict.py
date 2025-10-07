@@ -1,3 +1,4 @@
+import os
 import serial
 import threading
 import sys
@@ -10,23 +11,26 @@ from datetime import datetime
 import csv
 import numpy as np
 import pandas as pd
+import openpyxl
+from openpyxl.utils import get_column_letter
 
 # ---------------- CONFIG ----------------
-SERIAL_PORT = "/dev/cu.usbserial-0289722F"
+SERIAL_PORT = "COM6"
 BAUDRATE = 115200
 MAX_BUFFER_LINES = 500
 
 serial_lock = threading.Lock()
 
 # Buffers per sensor ID
-post_baseline_counter = defaultdict(int)
 serial_buffer = defaultdict(lambda: deque(maxlen=MAX_BUFFER_LINES))
 
 start_time = datetime.now()
 
 # ---------------- CSV LOGGING ----------------
 timestamp_str = datetime.now().strftime("%Y%m%d_%H%M%S")
-csv_file = f"predict_data_{timestamp_str}.csv"
+csv_file = f"{timestamp_str}.csv"
+annotation_file = f"{timestamp_str}.txt"
+
 csv_columns = ["id","index","millis","gas_index","mes_index","temperature","pressure","humidity","gas_resistance","status"]
 
 # Initialize CSV
@@ -94,9 +98,10 @@ def serial_reader():
             with open(csv_file, mode="a", newline="") as f:
                 writer = csv.DictWriter(f, fieldnames=csv_columns_full)
                 writer.writerow(row)
-
+            
+            #write_excel_row(row, csv_columns_full, f"{timestamp_str}.xlsx")
             # ---------------- PRINT OUTPUT ----------------
-            print(row)
+            #print(row)
 
         except Exception as e:
             print("[serial_reader] Error:", e)
@@ -105,6 +110,75 @@ def serial_reader():
                 ser = try_serial()
 
 
+
+def write_excel_row(row: dict, csv_columns_full: list, excel_file: str):
+    """
+    Appends a row (dict) to an Excel file (.xlsx).
+    If the file doesn't exist, creates it with the given column headers.
+    Keeps decimal numbers as numeric values.
+    """
+
+    if not excel_file.lower().endswith(".xlsx"):
+        raise ValueError("File must have .xlsx extension")
+
+    try:
+        # Create new workbook if it doesn't exist
+        if not os.path.exists(excel_file):
+            wb = openpyxl.Workbook()
+            ws = wb.active
+            ws.title = "Data"
+
+            # Write header row
+            ws.append(csv_columns_full)
+
+            wb.save(excel_file)
+            wb.close()  # Close immediately
+
+        # Load existing workbook
+        wb = openpyxl.load_workbook(excel_file)
+        ws = wb.active
+
+        # Check headers match
+        existing_headers = [cell.value for cell in ws[1]]
+        if existing_headers != csv_columns_full:
+            raise ValueError("Column mismatch: Excel headers differ from csv_columns_full")
+
+        # Ensure numeric values are numbers (not strings)
+        row_values = []
+        for col in csv_columns_full:
+            value = row.get(col, None)
+            # Convert numeric strings to float if possible
+            if isinstance(value, str):
+                try:
+                    if '.' in value or value.isdigit():
+                        value = float(value)
+                except:
+                    pass
+            row_values.append(value)
+
+        # Append the row
+        ws.append(row_values)
+
+        # Optional: auto-adjust column widths
+        for i, col_name in enumerate(csv_columns_full, start=1):
+            max_length = max(len(str(col_name)),
+                             *(len(str(cell.value)) for cell in ws[get_column_letter(i)] if cell.value))
+            ws.column_dimensions[get_column_letter(i)].width = max_length + 2
+
+        wb.save(excel_file)
+        wb.close()
+
+    except Exception as e:
+        print("Error writing Excel row:", e)
+   
+
+
+
+def save_annotations(value):
+    """Writes a value to a text file; appends if it exists, creates if not."""
+    mode = "a" if os.path.exists(annotation_file) else "w"
+    with open(annotation_file, mode, encoding="utf-8") as file:
+        file.write(f"{value}\n")
 
 # ---------------- DASH APP ----------------
 app = Dash(__name__)
@@ -157,6 +231,7 @@ def toggle_button_state(value):
 def save_user_input(n_clicks, value):
     """Save the input value when button is clicked."""
     if value:
+        save_annotations(f"{datetime.now()} - {value}")
         return value, f"✅ Descrição salva: {value}"
     return None, "No data saved"
 
@@ -171,6 +246,13 @@ def update_dashboard(n):
 
     with serial_lock:
         sensor_ids = list(serial_buffer.keys())
+        #To avoid cut sensor_id and get the correct sensor_id list
+        for sensor in sensor_ids:
+            if(len(sensor) < 9):
+                print("------------------------------------------------------------")
+                print("WARNING - THERE IS A SENSOR_ID CUT, LETS GET THE KEYS AGAIN")
+                print("------------------------------------------------------------")
+                sensor_ids = list(serial_buffer.keys())
         dfs = {sid: pd.DataFrame(list(serial_buffer[sid])) for sid in sensor_ids}
 
     if not sensor_ids:
@@ -202,7 +284,7 @@ def update_dashboard(n):
         df['elapsed_s'] = (df['timestamp'] - start_time).dt.total_seconds()
 
         # line=dict(color="#00FFFF") -> TO CHANGE THE LINES COLOR INCLUDING THIS PROPERTY
-        fig.add_trace(go.Scatter(x=df['timestamp'], y=df['gas_resistance'], mode='lines', name=f'Gas {sid}'), row=row, col=col)
+        fig.add_trace(go.Scatter(x=df['timestamp'], y=df['gas_resistance'], mode='lines', name=f'Sensor ID {sid}'), row=row, col=col)
         
 
     fig.update_layout(template="plotly_dark", hovermode="x unified", height=1200)

@@ -247,14 +247,27 @@ def update_dashboard(n):
     from plotly.subplots import make_subplots
 
     with serial_lock:
+        # Desired display order
+        desired_order = [
+            "765270362", "765279836", "765287253", "765269850",
+            "765286747", "765283665", "765271387", "765268824"
+        ]
         sensor_ids = list(serial_buffer.keys())
-        #To avoid cut sensor_id and get the correct sensor_id list
+
+        # Wait until all sensors are detected before fixing the order
+        if len(sensor_ids) == len(desired_order):
+            sensor_ids = [sid for sid in desired_order if sid in sensor_ids]
+        else:
+            sensor_ids.sort()
+
+        # To avoid truncated sensor IDs
         for sensor in sensor_ids:
-            if(len(sensor) < 9):
+            if len(sensor) < 9:
                 print("------------------------------------------------------------")
                 print("WARNING - THERE IS A SENSOR_ID CUT, LETS GET THE KEYS AGAIN")
                 print("------------------------------------------------------------")
                 sensor_ids = list(serial_buffer.keys())
+
         dfs = {sid: pd.DataFrame(list(serial_buffer[sid])) for sid in sensor_ids}
 
     if not sensor_ids:

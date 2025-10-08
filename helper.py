@@ -42,7 +42,7 @@ def build_layout():
     
     dcc.Upload(
         id='upload-data',
-        children=html.Div(['Drag and Drop or ', html.A('Select a CSV File', style={'color': 'white', 'textDecoration': 'underline'})]),
+        children=html.Div(['Drag and Drop or ', html.A('Select a CSV File', style={'color': 'white', 'textDecoration': 'underline', 'cursor' : 'pointer'})]),
         style={'width': '50%', 'height': '60px', 'lineHeight': '60px',
                'borderWidth': '1px', 'borderStyle': 'dashed', 'borderRadius': '5px',
                'textAlign': 'center', 'margin': '10px auto', 'color': 'white',
@@ -60,7 +60,7 @@ def build_layout():
         dcc.Graph(id='gas-graph', config={'displayModeBar': True, 'modeBarButtonsToAdd': ['select2d', 'lasso2d']}),
     ]),
     html.Div([
-        html.Button("Export XLSX file", id="export-button", n_clicks=0, 
+        html.Button("Export XLSX file", id="export-button", n_clicks=0, disabled=True,
         style={
             'margin': '10px', 
             "margin-top" : "20px",

@@ -4,8 +4,12 @@ from dash import Dash, dcc, html, Input, State, Output, no_update
 import plotly.graph_objs as go
 import io, base64
 import os
-from features import extract_features
 from helper import build_table, build_layout
+from dash import dcc
+import io
+from openpyxl import Workbook
+from collections import defaultdict
+from datetime import datetime
 
 app = Dash(__name__)
 app.title = "Sensor Dashboard"
@@ -86,6 +90,8 @@ def build_valid_selection_payload(selectedData):
 
     return None
 
+
+
 # ----------------------------
 # Store selected points
 # ----------------------------
@@ -106,9 +112,10 @@ def store_selected_points(selectedData, current_sensor):
 @app.callback(
     Output('gas-graph', 'figure'),
     Input('sensor-dropdown', 'value'),
-    Input('selected-points-store', 'data')
+    Input('selected-points-store', 'data'),
+    State('sensor-dropdown', 'options'),
 )
-def update_graph(selected_id, stored_selected):
+def update_graph(selected_id, stored_selected, sensors):
     fig = go.Figure()
     fig.update_layout(dragmode='select')
     fig.update_layout(
@@ -148,69 +155,56 @@ def update_graph(selected_id, stored_selected):
         marker=dict(color='red')
     ))
 
-    # Handle selected region
-    if stored_selected and stored_selected.get('sensor') == selected_id:
-        df_selected = pd.DataFrame()
-        if 'indices' in stored_selected:
-            idxs = [i for i in stored_selected['indices'] if 0 <= i < len(df_filtered)]
-            if idxs:
-                df_selected = df_filtered.iloc[idxs].copy()
-        elif 'x_range' in stored_selected:
-            x_min, x_max = stored_selected['x_range']
-            df_selected = df_filtered[
-                (df_filtered['time'] >= x_min) & (df_filtered['time'] <= x_max)
-            ].copy()
+    for sensor in sensors:
+        # Handle selected region
+        if stored_selected and stored_selected.get('sensor'):
+            df_selected = pd.DataFrame()
+            if 'indices' in stored_selected:
+                idxs = [i for i in stored_selected['indices'] if 0 <= i < len(df_filtered)]
+                if idxs:
+                    df_selected = df_filtered.iloc[idxs].copy()
+            elif 'x_range' in stored_selected:
+                x_min, x_max = stored_selected['x_range']
+                df_selected = df_filtered[
+                    (df_filtered['time'] >= x_min) & (df_filtered['time'] <= x_max)
+                ].copy()
 
-        if not df_selected.empty:
-            df_selected = df_selected.sort_values('time').reset_index(drop=True)
-            y = df_selected['gas_resistance'].values
-            t = df_selected['time'].values
+            if not df_selected.empty:
+                df_selected = df_selected.sort_values('time').reset_index(drop=True)
+                y = df_selected['gas_resistance'].values
+                t = df_selected['time'].values
 
-            # Find min and max indices in selected region
-            min_idx = int(np.argmin(y))
-            if min_idx < len(y) - 1:
-                max_idx = int(np.argmax(y[min_idx:])) + min_idx
-            else:
-                max_idx = min_idx
+                # Find min and max indices in selected region
+                min_idx = int(np.argmin(y))
+                if min_idx < len(y) - 1:
+                    max_idx = int(np.argmax(y[min_idx:])) + min_idx
+                else:
+                    max_idx = min_idx
 
-            # Highlight selected region and points
-            fig.add_trace(go.Scatter(
-                x=t,
-                y=y,
-                mode='lines',
-                name='Selected Area',
-                line=dict(color='yellow', width=3)
-            ))
-            fig.add_trace(go.Scatter(
-                x=[t[min_idx]], y=[y[min_idx]],
-                mode='markers', name='Drop Min',
-                marker=dict(color='blue', size=12, symbol='triangle-down')
-            ))
-            fig.add_trace(go.Scatter(
-                x=[t[max_idx]], y=[y[max_idx]],
-                mode='markers', name='Recovery Max',
-                marker=dict(color='green', size=12, symbol='triangle-up')
-            ))
+
+                if int(selected_id) == int(sensor["label"]):
+                    # Highlight selected region and points
+                    fig.add_trace(go.Scatter(
+                        x=t,
+                        y=y,
+                        mode='lines',
+                        name='Selected Area!',
+                        line=dict(color='yellow', width=3)
+                    ))
+                    fig.add_trace(go.Scatter(
+                        x=[t[min_idx]], y=[y[min_idx]],
+                        mode='markers', name='Drop Min',
+                        marker=dict(color='blue', size=12, symbol='triangle-down')
+                    ))
+                    fig.add_trace(go.Scatter(
+                        x=[t[max_idx]], y=[y[max_idx]],
+                        mode='markers', name='Recovery Max',
+                        marker=dict(color='green', size=12, symbol='triangle-up')
+                    ))
 
     return fig
 
-
-# Update metrics
-@app.callback(
-    Output('selected-data-output', 'children'),
-    Input('sensor-dropdown', 'value'),
-    Input('selected-points-store', 'data')
-)
-def update_metrics(selected_id, stored_selected):
-    global df_selected_data
-    # If no data or no sensor selected -> show default
-    if selected_id is None or df_global.empty:
-        return "No data selected."
-
-    # If there is no stored valid selection for current sensor, show message
-    if not stored_selected or stored_selected.get('sensor') != selected_id:
-        return "No data selected."
-
+def get_selected_area(selected_id, stored_selected):
     # Build filtered dataframe
     df_filtered = df_global[df_global['id'] == selected_id].copy()
     df_filtered['millis'] = pd.to_numeric(df_filtered.get('millis'), errors='coerce')
@@ -218,7 +212,7 @@ def update_metrics(selected_id, stored_selected):
     df_filtered = df_filtered.dropna(subset=['millis', 'gas_resistance'])
     if df_filtered.empty:
         return "No numeric data for this sensor."
-
+    
     df_filtered = df_filtered.reset_index(drop=True)
     # KEEP absolute time in seconds
     df_filtered['time'] = df_filtered['millis'] / 1000.0
@@ -229,9 +223,6 @@ def update_metrics(selected_id, stored_selected):
         if not idxs:
             return "Selected points do not match any data."
         df_selected = df_filtered.iloc[idxs].copy().sort_values('time').reset_index(drop=True)
-        # baseline candidates: up to 5 points before the first selected index, if any
-        first_global_idx = idxs[0]
-        baseline_candidates = df_filtered.iloc[max(0, first_global_idx - 5): first_global_idx]['gas_resistance'].values
     elif 'x_range' in stored_selected:
         x_min, x_max = stored_selected['x_range']
         df_selected = df_filtered[(df_filtered['time'] >= x_min) & (df_filtered['time'] <= x_max)].copy().sort_values('time').reset_index(drop=True)
@@ -255,27 +246,114 @@ def update_metrics(selected_id, stored_selected):
     df_selected_data = df_selected.copy()
     if len(y) == 0:
         return "Selected points do not match any data."
+    
+    return df_selected_data
+
+# Update metrics
+@app.callback(
+    Output('selected-data-output', 'children'),
+    Input('sensor-dropdown', 'value'),
+    Input('selected-points-store', 'data')
+)
+def update_metrics(selected_id, stored_selected):
+    global df_selected_data
+    # If no data or no sensor selected -> show default
+    if selected_id is None or df_global.empty:
+        return "No data selected."
+
+    # If there is no stored valid selection for current sensor, show message
+    # if not stored_selected or stored_selected.get('sensor') != selected_id:
+    #     return "No data selected."
+    if not stored_selected:
+        return "No data selected."
+    
+    df_selected = get_selected_area(selected_id=selected_id, stored_selected=stored_selected)
 
 
     return html.Div([
         html.H4("Selected data:"),
         #html.Ul(feature_items)
-    ]), build_table(df_selected)    
+    ]), build_table(df_selected)
+
+
+def create_excel_bytes(data):
+    # Create workbook and 'All Data' sheet
+    wb = Workbook()
+    ws_all = wb.active
+    ws_all.title = "All Data"
+    ws_all.append(["sensor_id", "gas_resistance", "date_time"])
+    ws_all.column_dimensions["A"].width = 15
+    ws_all.column_dimensions["B"].width = 18
+    ws_all.column_dimensions["C"].width = 25
+
+    # Populate 'All Data' sheet and build grouped mapping
+    grouped = defaultdict(list)
+    for entry in data:
+        sensor_id = entry.get("sensor_id")
+        gas = entry.get("gas_resistance", "")
+        dt = entry.get("date_time", "")
+        # append to All Data
+        ws_all.append([sensor_id if sensor_id is not None else "", gas, dt])
+        # collect per-sensor
+        if sensor_id is not None:
+            grouped[sensor_id].append(entry)
+
+    # Create per-sensor sheets
+    for sensor_id, records in grouped.items():
+        ws = wb.create_sheet(title=str(sensor_id))
+        ws.append(["sensor_id", "gas_resistance", "date_time"])
+        for rec in records:
+            ws.append([rec.get("sensor_id", ""), rec.get("gas_resistance", ""), rec.get("date_time", "")])
+        ws.column_dimensions["A"].width = 15
+        ws.column_dimensions["B"].width = 18
+        ws.column_dimensions["C"].width = 25
+
+
+    # Save to bytes buffer
+    bio = io.BytesIO()
+    wb.save(bio)
+    bio.seek(0)
+    return bio
 
 
 @app.callback(
     Output("download-xlsx", "data"),
     Input("export-button", "n_clicks"),
     State("df-selected-store", "data"),  # read df_selected from store
+    State('sensor-dropdown', 'options'),
+    State('selected-points-store', 'data'),
     prevent_initial_call=True
 )
-def export_to_xlsx(n_clicks, data):
+def export_to_xlsx(n_clicks, data, options, selected_points_store):
     # Convert DataFrame to Excel bytes
     global df_selected_data
+    print(df_global.values)
+    data = df_global.values
+
+    min_idx = min(selected_points_store["indices"])
+    max_idx = max(selected_points_store["indices"])
+    ordered_data = []
+
+    for sensor_id in options:
+        selected_sensor_data = []
+        for d in data:
+            if d[0] == int(sensor_id["label"]):
+                selected_sensor_data.append({
+                  "sensor_id" : d[0],
+                  "gas_resistance" : d[8],
+                  "date_time" : d[10]
+                })
+
+        for value in selected_sensor_data[min_idx:max_idx + 1]:
+            ordered_data.append(value)
+
     
-    print(len(df_selected_data))
-    df_sorted = df_selected_data.sort_values('id')
-    print(len(df_sorted))
+    print(ordered_data)
+     # Convert to bytes
+    excel_bytes = create_excel_bytes(ordered_data)
+
+    # Trigger download in browser
+    return dcc.send_bytes(excel_bytes.getvalue(), filename=f"{datetime.now().strftime("%d-%m-%Y-%H:%M:%S%f")[:-2]}.xlsx")
 
 
 if __name__ == '__main__':

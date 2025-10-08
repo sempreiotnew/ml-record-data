@@ -4,7 +4,7 @@ import plotly.graph_objs as go
 # Build table of selected points (cap rows to 200)
 def build_table(df_sel, max_rows=200):
     #header = [html.Tr([html.Th("idx"), html.Th("millis"), html.Th("time_s"), html.Th("gas_resistance")], style={'color':'white'})]
-    header = [html.Tr([html.Th("idx"), html.Th("gas_resistance"), html.Th("date_time")], style={'color':'white'})]
+    header = [html.Tr([html.Th("idx"), html.Th("sensor_id"), html.Th("gas_resistance"), html.Th("date_time")], style={'color':'white'})]
     rows = []
     #nrows = min(len(df_sel), max_rows)
     nrows = len(df_sel)
@@ -13,6 +13,7 @@ def build_table(df_sel, max_rows=200):
             html.Td(str(i)),
             #html.Td(str(int(df_sel['millis'].iloc[i]))),
             #html.Td(f"{float(df_sel['time'].iloc[i]):.3f}"),
+            html.Td(str((df_sel['id'].iloc[i]))),
             html.Td(f"{float(df_sel['gas_resistance'].iloc[i]):.2f}"),
             html.Td(str((df_sel['date_time'].iloc[i]))),
             #html.Td(f"{float(df_sel['temperature'].iloc[i]):.3f}")

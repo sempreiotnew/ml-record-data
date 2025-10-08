@@ -58,6 +58,33 @@ def update_dropdown(contents, filename):
     first_id = ids[0] if len(ids) > 0 else None
     return options, first_id, f"File '{filename}' uploaded successfully. Found {len(ids)} unique sensors."
 
+@app.callback(
+    Output('uploaded-file-store', 'data'),
+    Input('reload-button', 'n_clicks'),
+    State('upload-data', 'filename'),
+    prevent_initial_call=True
+)
+def reload_from_disk(n_clicks, filename):
+    global df_global
+    if not filename:
+        print("Reload clicked but no filename provided")
+        return no_update
+
+    path = os.path.join(os.getcwd(), filename)
+    if not os.path.isfile(path):
+        print(f"Reload failed — file not found: {path}")
+        return no_update
+
+    try:
+        df = pd.read_csv(path)
+    except Exception as e:
+        print(f"Reload failed — error reading file: {e}")
+        return no_update
+
+    df_global = df
+    print(f"Reloaded file from disk: {path}")
+    # return minimal metadata into the store (avoids duplicate-output issues)
+    return {'path': path, 'filename': filename}
 # ----------------------------
 # Helper to extract valid selection info
 # ----------------------------
@@ -113,9 +140,10 @@ def store_selected_points(selectedData, current_sensor):
     Output('gas-graph', 'figure'),
     Input('sensor-dropdown', 'value'),
     Input('selected-points-store', 'data'),
+    Input('uploaded-file-store', 'data'),            # <- added to trigger on reload
     State('sensor-dropdown', 'options'),
 )
-def update_graph(selected_id, stored_selected, sensors):
+def update_graph(selected_id, stored_selected, uploaded_store, sensors):
     fig = go.Figure()
     fig.update_layout(dragmode='select')
     fig.update_layout(

@@ -39,7 +39,6 @@ def build_table(df_sel, max_rows=200):
 def build_layout():
     return html.Div([
     html.H1("Sensor Data Dashboard", style={'textAlign': 'center', 'color': 'white'}),
-    
     dcc.Upload(
         id='upload-data',
         children=html.Div(['Drag and Drop or ', html.A('Select a CSV File', style={'color': 'white', 'textDecoration': 'underline', 'cursor' : 'pointer'})]),
@@ -49,6 +48,22 @@ def build_layout():
                'backgroundColor': 'rgba(50,50,50,0.7)'},
         multiple=False
     ),
+    html.Div([
+        dcc.Store(id='uploaded-file-store'),  # store last uploaded contents+filename
+        html.Button("Reload File", id="reload-button", n_clicks=0,
+            style={
+                'margin': '10px',
+                "margin-top" : "20px",
+                "color" : "white",
+                "background-color" : "blue",
+                "border-radius" : "20px",
+                "padding" : "12px",
+                "cursor" : "pointer"
+            }),
+    ], style={
+        "display" : "flex",
+        "justify-content" : "center"
+    }),
     html.Div(id='output-data-upload', style={'color': 'white', 'textAlign': 'center'}),
     html.Div([
         html.Label("Select Sensor ID:", style={'color': 'white'}),

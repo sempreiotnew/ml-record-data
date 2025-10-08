@@ -15,7 +15,7 @@ import openpyxl
 from openpyxl.utils import get_column_letter
 
 # ---------------- CONFIG ----------------
-SERIAL_PORT = "COM6"
+SERIAL_PORT = "/dev/cu.usbserial-0289722F"
 BAUDRATE = 115200
 MAX_BUFFER_LINES = 500
 

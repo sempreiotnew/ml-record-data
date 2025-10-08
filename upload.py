@@ -259,21 +259,21 @@ def update_metrics(selected_id, stored_selected):
     global df_selected_data
     # If no data or no sensor selected -> show default
     if selected_id is None or df_global.empty:
-        return "No data selected."
+        return "❌ No data selected."
 
     # If there is no stored valid selection for current sensor, show message
     # if not stored_selected or stored_selected.get('sensor') != selected_id:
     #     return "No data selected."
     if not stored_selected:
-        return "No data selected."
+        return "❌ No data selected."
     
-    df_selected = get_selected_area(selected_id=selected_id, stored_selected=stored_selected)
+    
 
 
     return html.Div([
-        html.H4("Selected data:"),
+        html.H4("✅ Data selected !"),
         #html.Ul(feature_items)
-    ]), build_table(df_selected)
+    ]), 
 
 
 def create_excel_bytes(data):
@@ -315,6 +315,49 @@ def create_excel_bytes(data):
     bio.seek(0)
     return bio
 
+@app.callback(
+    Output("export-button", "disabled"),
+    Input("selected-points-store", "data"),
+    Input("sensor-dropdown", "value"),
+)
+def toggle_export_button(selected_points_store, current_sensor):
+    # disabled == True -> button not clickable
+    if not selected_points_store:
+        return True
+    # ensure selection belongs to current sensor
+    if selected_points_store.get("sensor") is not None and str(selected_points_store.get("sensor")) != str(current_sensor):
+        return True
+    # valid indices selection
+    if selected_points_store.get("indices"):
+        return False
+    # valid x_range selection
+    if selected_points_store.get("x_range"):
+        return False
+    return True
+
+@app.callback(
+    Output("export-button", "style"),
+    Input("selected-points-store", "data"),
+    Input("sensor-dropdown", "value"),
+)
+def export_button_style(selected_points_store, current_sensor):
+    
+    # base shared style
+    base = {
+        'margin': '10px',
+        "margin-top": "20px",
+        "color": "white",
+        "border-radius": "20px",
+        "padding": "12px",
+        "cursor": "pointer"
+    }
+    disabled_style = {**base, "background-color": "grey", "cursor": "not-allowed"}
+    enabled_style = {**base, "background-color": "green", "cursor": "pointer"}
+
+    if selected_points_store:
+        return enabled_style
+    else:
+        return disabled_style
 
 @app.callback(
     Output("download-xlsx", "data"),

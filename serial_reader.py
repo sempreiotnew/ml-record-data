@@ -56,6 +56,9 @@ def serial_reader_function():
                 continue
             sensor_id = parts[0]
             gas_resistance = float(parts[8])
+            temperature = float(parts[5])
+            pressure = float(parts[6])
+            humidity = float(parts[7])
             
 
             # Append to serial buffer for plotting
@@ -64,6 +67,9 @@ def serial_reader_function():
                 serial_buffer[sensor_id].append({
                     "timestamp": datetime.now(),
                     "gas_resistance": gas_resistance,
+                    "temperature" : temperature,
+                    "pressure" : pressure,
+                    "humidity" : humidity
                 })
 
             

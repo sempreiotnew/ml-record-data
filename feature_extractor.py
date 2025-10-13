@@ -13,8 +13,6 @@ def extract_features_from_data(data, label):
     data: list of dicts, each with keys:
         "gas_resistance", "temperature", "pressure", "humidity"
     """
-
-    print(data)
     
     x = np.arange(len(data))  # time in seconds
     
@@ -125,7 +123,7 @@ def extract_features_from_data(data, label):
 
     if label:
         features["label"] = label
-    print(features)
+    
     return features
 
 

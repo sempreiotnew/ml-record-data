@@ -391,6 +391,7 @@ def export_button_style(selected_points_store, current_sensor):
 
 @app.callback(
     Output("download-xlsx", "data"),
+    Output("ordered-data-output", "data"),
     Input("export-button", "n_clicks"),
     State("df-selected-store", "data"),  # read df_selected from store
     State('sensor-dropdown', 'options'),
@@ -422,9 +423,18 @@ def enable_button(input_value):
 @app.callback(
     Output('output', 'children'),
     Input('my-button', 'n_clicks'),
-    State('my-input', 'value')
+    State('my-input', 'value'),
+    State('sensor-dropdown', 'options'),
+    State('selected-points-store', 'data'),
+    prevent_initial_call=True
 )
-def handle_click(n_clicks, input_value):
+def handle_click(n_clicks, input_value, options, selected_points_store):
+    ordered_data = extract_data_all_sensors(selected_points_store=selected_points_store, options=options)
+    
+    features = extract_features(ordered_data=ordered_data, label=input_value)
+    
+    export_features_to_json(features)
+
     if n_clicks > 0:
         return f"You entered: {input_value}"
     return ""
@@ -455,7 +465,7 @@ def export_features_to_json(features):
         json.dump(data_list, f, indent=4, default=np_encoder)
 
 
-def extract_features(ordered_data):
+def extract_features(ordered_data, label):
     prev_id = None
     splitted_data_by_id = []
     all_features = []
@@ -467,7 +477,7 @@ def extract_features(ordered_data):
         if prev_id == data["sensor_id"]:
             splitted_data_by_id.append(data)
         else:
-            derivative_features = extract_features_from_data(splitted_data_by_id)
+            derivative_features = extract_features_from_data(splitted_data_by_id, label)
             all_features.append(derivative_features)
             splitted_data_by_id = []
 

@@ -99,6 +99,7 @@ def build_layout():
         "display" : "flex",
         "justify-content" : "center"
     }),
+    dcc.Store(id='ordered-data-output'), 
     dcc.Download(id="download-xlsx"),
     html.Div(id='selected-data-output', style={'color': 'white', 'margin': '20px'}),
     

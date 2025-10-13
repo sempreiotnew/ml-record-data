@@ -5,7 +5,7 @@ import numpy as np
 from scipy.stats import skew, kurtosis
 
 
-def extract_features_from_data(data):
+def extract_features_from_data(data, label):
     """
     Extracts statistical, derivative, trend, peak, time-based, ratio, and AUC features
     from BME688 sensor data including gas_resistance, temperature, pressure, and humidity.
@@ -123,6 +123,8 @@ def extract_features_from_data(data):
     features["gas_over_hum_corr"] = np.corrcoef(y_gas, y_hum)[0, 1]
     features["gas_over_pres_corr"] = np.corrcoef(y_gas, y_pres)[0, 1]
 
+    if label:
+        features["label"] = label
     print(features)
     return features
 

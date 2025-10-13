@@ -4,8 +4,6 @@ import threading
 from collections import deque, defaultdict
 from datetime import datetime
 import csv
-import numpy as np
-import pandas as pd
 
 # ---------------- CONFIG ----------------
 SERIAL_PORT = "/dev/cu.usbserial-0289714A"
@@ -20,8 +18,10 @@ start_time = datetime.now()
 
 # ---------------- CSV LOGGING ----------------
 timestamp_str = datetime.now().strftime("%Y%m%d_%H%M%S")
-csv_file = f"{timestamp_str}.csv"
-annotation_file = f"{timestamp_str}.txt"
+output_dir = timestamp_str
+os.makedirs(output_dir, exist_ok=True)
+csv_file = os.path.join(output_dir, f"{timestamp_str}.csv")
+annotation_file = os.path.join(output_dir, f"{timestamp_str}.txt")
 
 csv_columns = ["id","index","millis","gas_index","mes_index","temperature","pressure","humidity","gas_resistance","status","date_time"]
 

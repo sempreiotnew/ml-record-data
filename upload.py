@@ -10,6 +10,8 @@ import io
 from openpyxl import Workbook
 from collections import defaultdict
 from datetime import datetime
+from feature_extractor import extract_features_from_data
+import json
 
 app = Dash(__name__)
 app.title = "Sensor Dashboard"
@@ -18,6 +20,7 @@ df_global = pd.DataFrame()
 df_selected_data = None 
 # Layout (unchanged, just added export button)
 app.layout = build_layout()
+date_time = datetime.now().strftime("%Y%m%d_%H%M%S")
 
 # ----------------------------
 # CSV parsing and dropdown update (unchanged)
@@ -69,8 +72,9 @@ def reload_from_disk(n_clicks, filename):
     if not filename:
         print("Reload clicked but no filename provided")
         return no_update
-
-    path = os.path.join(os.getcwd(), filename)
+    
+    path = os.path.join(os.getcwd() + "/" + filename[:len(filename) - 4], filename)
+    
     if not os.path.isfile(path):
         print(f"Reload failed — file not found: {path}")
         return no_update
@@ -294,10 +298,8 @@ def update_metrics(selected_id, stored_selected):
     #     return "No data selected."
     if not stored_selected:
         return "❌ No data selected."
-    
-    
 
-
+    
     return html.Div([
         html.H4("✅ Data selected !"),
         #html.Ul(feature_items)
@@ -396,9 +398,89 @@ def export_button_style(selected_points_store, current_sensor):
     prevent_initial_call=True
 )
 def export_to_xlsx(n_clicks, data, options, selected_points_store):
-    # Convert DataFrame to Excel bytes
+    ordered_data = extract_data_all_sensors(selected_points_store=selected_points_store, options=options)
+    
+    features = extract_features(ordered_data=ordered_data)
+    
+    export_features_to_json(features)
+     # Convert to bytes
+    excel_bytes = create_excel_bytes(ordered_data)
+
+    # Trigger download in browser
+    return dcc.send_bytes(excel_bytes.getvalue(), filename=f"{datetime.now().strftime("%d-%m-%Y-%H:%M:%S%f")[:-2]}.xlsx")
+
+
+# Only enable the button when input has text
+@app.callback(
+    Output('my-button', 'disabled'),
+    Input('my-input', 'value')
+)
+def enable_button(input_value):
+    return not bool(input_value and input_value.strip())  # disables button if input is empty
+
+# Show the input value when button is clicked
+@app.callback(
+    Output('output', 'children'),
+    Input('my-button', 'n_clicks'),
+    State('my-input', 'value')
+)
+def handle_click(n_clicks, input_value):
+    if n_clicks > 0:
+        return f"You entered: {input_value}"
+    return ""
+
+def export_features_to_json(features):
+    def np_encoder(obj):
+        if isinstance(obj, (np.integer, np.int64)):
+            return int(obj)
+        elif isinstance(obj, (np.floating, np.float64)):
+            return float(obj)
+        raise TypeError(f"Object of type {type(obj)} is not JSON serializable")
+    
+    filename = f"{date_time}.json"
+    if os.path.exists(filename):
+        with open(filename, "r") as f:
+            try:
+                data_list = json.load(f)
+            except json.JSONDecodeError:
+                data_list = []
+    else:
+        data_list = []
+
+    # Append the new features
+    data_list.append(features)
+
+    # Write back the updated list
+    with open(filename, "w") as f:
+        json.dump(data_list, f, indent=4, default=np_encoder)
+
+
+def extract_features(ordered_data):
+    prev_id = None
+    splitted_data_by_id = []
+    all_features = []
+
+    for idx, data in enumerate(ordered_data):
+        if idx == 0:
+            prev_id = data["sensor_id"]
+
+        if prev_id == data["sensor_id"]:
+            splitted_data_by_id.append(data)
+        else:
+            derivative_features = extract_features_from_data(splitted_data_by_id)
+            all_features.append(derivative_features)
+            splitted_data_by_id = []
+
+        prev_id = data["sensor_id"] 
+
+    return all_features              
+
+
+
+def extract_data_all_sensors(selected_points_store, options):
+# Convert DataFrame to Excel bytes
     global df_selected_data
-    print(df_global.values)
+    # print(df_global.values)
     data = df_global.values
 
     min_idx = min(selected_points_store["indices"])
@@ -412,20 +494,17 @@ def export_to_xlsx(n_clicks, data, options, selected_points_store):
                 selected_sensor_data.append({
                   "sensor_id" : d[0],
                   "gas_resistance" : d[8],
+                  "temperature" : d[5],
+                  "pressure" : d[6],
+                  "humidity" : d[7],
                   "date_time" : d[10]
                 })
 
         for value in selected_sensor_data[min_idx:max_idx + 1]:
             ordered_data.append(value)
 
-    
-    print(ordered_data)
-     # Convert to bytes
-    excel_bytes = create_excel_bytes(ordered_data)
-
-    # Trigger download in browser
-    return dcc.send_bytes(excel_bytes.getvalue(), filename=f"{datetime.now().strftime("%d-%m-%Y-%H:%M:%S%f")[:-2]}.xlsx")
-
+    return ordered_data
+        
 
 if __name__ == '__main__':
     app.run(debug=True, port=8051)

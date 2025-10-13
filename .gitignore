@@ -3,3 +3,4 @@ venv
 *.csv
 .xlsx
 2025*
+.json

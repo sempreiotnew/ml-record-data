@@ -75,6 +75,16 @@ def build_layout():
         dcc.Graph(id='gas-graph', config={'displayModeBar': True, 'modeBarButtonsToAdd': ['select2d', 'lasso2d']}),
     ]),
     html.Div([
+        dcc.Input(id='my-input', type='text', placeholder='Type something...'),
+        html.Button('Submit', id='my-button', n_clicks=0, disabled=True),
+        html.Div(id='output')
+    ], style={
+        'display': 'flex',
+        'flexDirection': 'column',  # stack input + button
+        'alignItems': 'center',     # horizontal center
+        'gap': '10px'               # space between elements
+    }),
+    html.Div([
         html.Button("Export XLSX file", id="export-button", n_clicks=0, disabled=True,
         style={
             'margin': '10px', 

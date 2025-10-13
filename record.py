@@ -12,7 +12,7 @@ import numpy as np
 import pandas as pd
 
 # ---------------- CONFIG ----------------
-SERIAL_PORT = "/dev/cu.usbserial-0289722F"
+SERIAL_PORT = "/dev/cu.usbserial-0289714A"
 BAUDRATE = 115200
 MAX_BUFFER_LINES = 500
 
@@ -20,7 +20,6 @@ serial_lock = threading.Lock()
 
 # Buffers per sensor ID
 serial_buffer = defaultdict(lambda: deque(maxlen=MAX_BUFFER_LINES))
-
 start_time = datetime.now()
 
 # ---------------- CSV LOGGING ----------------
@@ -61,14 +60,7 @@ def serial_reader():
                 continue
             sensor_id = parts[0]
             gas_resistance = float(parts[8])
-            temperature = float(parts[5])
-            pressure = float(parts[6])
-            humidity = float(parts[7])
-            status = parts[9]
-            gas_index = int(parts[3])
-            mes_index = int(parts[4])
-            index = int(parts[1])
-            millis = int(parts[2])
+            
 
             # Append to serial buffer for plotting
             with serial_lock:
@@ -78,25 +70,8 @@ def serial_reader():
                     "gas_resistance": gas_resistance,
                 })
 
-            # ---------------- LOG TO CSV ----------------
-            row = {
-                "id": sensor_id,
-                "index": index,
-                "millis": millis,
-                "gas_index": gas_index,
-                "mes_index": mes_index,
-                "temperature": temperature,
-                "pressure": pressure,
-                "humidity": humidity,
-                "gas_resistance": gas_resistance,
-                "status": status,
-                "date_time" : datetime.now().strftime("%d-%m-%Y-%H:%M:%S%f")[:-2]
-            }
-
-            csv_columns_full = list(row.keys())
-            with open(csv_file, mode="a", newline="") as f:
-                writer = csv.DictWriter(f, fieldnames=csv_columns_full)
-                writer.writerow(row)
+            
+            save_csv_file(parts)
             
             #write_excel_row(row, csv_columns_full, f"{timestamp_str}.xlsx")
             # ---------------- PRINT OUTPUT ----------------
@@ -108,6 +83,35 @@ def serial_reader():
             while ser == None:
                 ser = try_serial()
 
+def save_csv_file(splitted_data):
+    sensor_id = splitted_data[0]
+    gas_resistance = float(splitted_data[8])
+    temperature = float(splitted_data[5])
+    pressure = float(splitted_data[6])
+    humidity = float(splitted_data[7])
+    status = splitted_data[9]
+    gas_index = int(splitted_data[3])
+    mes_index = int(splitted_data[4])
+    index = int(splitted_data[1])
+    millis = int(splitted_data[2])
+
+    row = {
+        "id": sensor_id,
+        "index": index,
+        "millis": millis,
+        "gas_index": gas_index,
+        "mes_index": mes_index,
+        "temperature": temperature,
+        "pressure": pressure,
+        "humidity": humidity,
+        "gas_resistance": gas_resistance,
+        "status": status,
+        "date_time" : datetime.now().strftime("%d-%m-%Y-%H:%M:%S%f")[:-2]
+    }
+    csv_columns_full = list(row.keys())
+    with open(csv_file, mode="a", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=csv_columns_full)
+        writer.writerow(row)
 
 def save_annotations(value):
     """Writes a value to a text file; appends if it exists, creates if not."""

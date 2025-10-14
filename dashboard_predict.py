@@ -13,7 +13,9 @@ clf = joblib.load("random_forest_model.pkl")  # Make sure you trained this befor
 SLIDDING_WINDOW = 50
 THRESOLD_PREDICTION = 20
 CONFIDENCE_THRESHOLD = 0.7
-data_slide = []
+sensor_prediction_history = {}  
+sensor_current_label = {}
+
 
 label_colors = {
     "cigarro": "#E60A0A",
@@ -28,25 +30,6 @@ app = Dash(__name__)
 app.layout = html.Div([
     html.H2("BME688 Leonardo's Data", style={"color":"white","textAlign":"center"}),
 
-    # 🔹 Input + Button to store data
-    html.Div([
-        dcc.Input(
-            id="user-input",
-            type="text",
-            placeholder="Digite a descrição",
-            style={"marginRight": "10px", "width": "300px", "height": "40px"}
-        ),
-        html.Button(
-            "Salvar",
-            id="save-btn",
-            n_clicks=0,
-            disabled=True,
-            style={"backgroundColor": "#008CBA", "color": "white", "padding": "8px 16px", "border": "none", "borderRadius": "6px"}
-        ),
-        html.Div(id="saved-output", style={"color": "white", "marginTop": "10px"}),
-        dcc.Store(id="stored-variable")
-    ], style={"marginBottom": "30px", "textAlign": "center"}),
-
     # 🔹 Board showing predictions
     html.Div(id="sensor-predictions", style={
         "display":"grid",
@@ -59,33 +42,6 @@ app.layout = html.Div([
     dcc.Graph(id="live-graph", style={"height":"70vh"}),
     dcc.Interval(id="interval-refresh", interval=1000, n_intervals=0),
 ], style={"backgroundColor":"#111","padding":"20px"})
-
-
-# ---------------- USER INPUT HANDLER ----------------
-@app.callback(
-    Output("save-btn", "disabled"),
-    Input("user-input", "value")
-)
-def toggle_button_state(value):
-    """Enable button only when input is not empty."""
-    if value and value.strip():
-        return False
-    return True
-
-
-@app.callback(
-    [Output("stored-variable", "data"),
-     Output("saved-output", "children")],
-    Input("save-btn", "n_clicks"),
-    State("user-input", "value"),
-    prevent_initial_call=True
-)
-def save_user_input(n_clicks, value):
-    """Save the input value when button is clicked."""
-    if value:
-        save_annotations(f"{datetime.now()} - {value}")
-        return value, f"✅ Descrição salva: {value}"
-    return None, "No data saved"
 
 
 # ---------------- DASH UPDATE ----------------
@@ -125,17 +81,14 @@ def update_dashboard(n):
             continue
 
         df = df.copy()
-        df['timestamp'] = pd.to_datetime(df['timestamp'])
-        df['elapsed_s'] = (df['timestamp'] - start_time).dt.total_seconds()
 
         # 🔹 Sliding window
         slide_df = get_sliding_data(df)
 
         # 🔹 Prediction on sliding window
-        if not slide_df.empty:
+        if not slide_df.empty and len(slide_df) > THRESOLD_PREDICTION :
             
             probs, predicted_label = get_prediction(slide_df=slide_df)
-            
             
             prediction_cards.append(
                 html.Div([
@@ -151,7 +104,21 @@ def update_dashboard(n):
                     
                 })
             )
-
+        else:
+            prediction_cards.append(
+                html.Div([
+                    html.H4(f"Sensor {sid}", style={"margin":"0"}),
+                    html.P(f"Thinking ", style={"margin":"0"},)
+                ], style={
+                    "padding":"10px",
+                    "backgroundColor":"#222",
+                    "color":"white",
+                    "borderRadius":"6px",
+                    "textAlign":"center",
+                    "backgroundColor" : label_colors.get( "#22222")
+                    
+                })
+            )
 
         # 🔹 Draw full curve (cyan)
         fig.add_trace(

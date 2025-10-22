@@ -20,7 +20,8 @@ sensor_current_label = {}
 label_colors = {
     "cigarro": "#E60A0A",
     "ar": "#0D9501",
-    "alcool" : "#1D05B5FF",
+    "alcool" : "#1D05B5",
+    "gas" : "#D46205",
     "unknow": "#505050"
 }
 
@@ -84,7 +85,7 @@ def update_dashboard(n):
 
         # 🔹 Sliding window
         slide_df = get_sliding_data(df)
-
+        predicted_label = None
         # 🔹 Prediction on sliding window
         if not slide_df.empty and len(slide_df) > THRESOLD_PREDICTION :
             
@@ -133,6 +134,7 @@ def update_dashboard(n):
         )
 
         # 🔹 Draw sliding window (pink)
+        color = label_colors.get(predicted_label, "#FF69B4")
         if not slide_df.empty:
             fig.add_trace(
                 go.Scatter(
@@ -140,7 +142,8 @@ def update_dashboard(n):
                     y=slide_df['gas_resistance'],
                     mode='lines',
                     name=f'{sid} (window)',
-                    line=dict(color="#FF69B4", width=4)
+                    # line=dict(color="#FF69B4", width=4)
+                    line=dict(color=color, width=4)
                 ),
                 row=idx//cols+1,
                 col=idx%cols+1

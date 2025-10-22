@@ -7,3 +7,5 @@ pyserial
 cesium
 matplotlib
 openpyxl
+torch
+seaborn

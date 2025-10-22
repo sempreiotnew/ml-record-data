@@ -1,43 +1,157 @@
 import numpy as np
+from scipy.stats import skew, kurtosis
+from scipy.ndimage import uniform_filter1d
+
+# def extract_features_from_data(data, label=None):
+#     """
+#     Extract compound-discriminative features from BME688 sensor data.
+#     Works for gas_resistance, temperature, pressure, and humidity.
+#     """
+#     x = np.arange(len(data))
+
+#     y_gas = np.array([d["gas_resistance"] for d in data])
+#     y_temp = np.array([d["temperature"] for d in data])
+#     y_pres = np.array([d["pressure"] for d in data])
+#     y_hum = np.array([d["humidity"] for d in data])
+
+#     def compute_features(y, prefix):
+#         features = {}
+
+#         # --- Smoothed signal ---
+#         y_smooth = uniform_filter1d(y, size=3)
+
+#         # --- Basic Stats ---
+#         features[f'{prefix}_mean'] = np.mean(y_smooth)
+#         features[f'{prefix}_std'] = np.std(y_smooth)
+#         features[f'{prefix}_min'] = np.min(y_smooth)
+#         features[f'{prefix}_max'] = np.max(y_smooth)
+#         features[f'{prefix}_median'] = np.median(y_smooth)
+#         features[f'{prefix}_range'] = np.ptp(y_smooth)
+#         features[f'{prefix}_q25'] = np.percentile(y_smooth, 25)
+#         features[f'{prefix}_q75'] = np.percentile(y_smooth, 75)
+#         features[f'{prefix}_skew'] = skew(y_smooth)
+#         features[f'{prefix}_kurtosis'] = kurtosis(y_smooth)
+
+#         # --- Derivatives ---
+#         dy = np.diff(y_smooth) / np.diff(x)
+#         features[f'{prefix}_dy_mean'] = np.mean(dy)
+#         features[f'{prefix}_dy_std'] = np.std(dy)
+#         features[f'{prefix}_dy_min'] = np.min(dy)
+#         features[f'{prefix}_dy_max'] = np.max(dy)
+
+#         # Second derivative
+#         ddy = np.diff(dy) / np.diff(x[:-1])
+#         features[f'{prefix}_ddy_mean'] = np.mean(ddy)
+#         features[f'{prefix}_ddy_std'] = np.std(ddy)
+
+#         # --- Trend ---
+#         slope = np.polyfit(x, y_smooth, 1)[0]
+#         features[f'{prefix}_slope'] = slope
+
+#         # --- Peak features ---
+#         peaks = ((y_smooth[1:-1] > y_smooth[:-2]) & (y_smooth[1:-1] > y_smooth[2:])).nonzero()[0]
+#         features[f'{prefix}_peaks_count'] = len(peaks)
+#         if len(peaks) > 0:
+#             features[f'{prefix}_peak_max'] = np.max(y_smooth[peaks])
+#             features[f'{prefix}_peak_width'] = peaks[-1] - peaks[0]  # rough width
+#         else:
+#             features[f'{prefix}_peak_max'] = 0
+#             features[f'{prefix}_peak_width'] = 0
+
+#         # --- Rise/fall times ---
+#         y_min, y_max = np.min(y_smooth), np.max(y_smooth)
+#         y_10 = y_min + 0.1*(y_max - y_min)
+#         y_90 = y_min + 0.9*(y_max - y_min)
+#         if y_smooth[0] < y_smooth[-1]:
+#             t10 = np.argmax(y_smooth >= y_10)
+#             t90 = np.argmax(y_smooth >= y_90)
+#         else:
+#             t10 = np.argmax(y_smooth <= y_90)
+#             t90 = np.argmax(y_smooth <= y_10)
+#         features[f'{prefix}_rise_time'] = abs(t90 - t10)
+
+#         # --- Area under curve and area ratio ---
+#         mid_idx = np.argmax(y_smooth) if y_smooth[0] < y_smooth[-1] else np.argmin(y_smooth)
+#         area_rise = np.trapz(y_smooth[:mid_idx+1], x[:mid_idx+1])
+#         area_decay = np.trapz(y_smooth[mid_idx:], x[mid_idx:])
+#         eps = 1e-3 * (y_max - y_min)
+#         features[f'{prefix}_area_ratio'] = abs((area_rise+eps)/(area_decay+eps))
+#         features[f'{prefix}_auc'] = np.trapz(y_smooth, x)
+
+#         # --- Frequency domain features ---
+#         fft_coeff = np.fft.fft(y_smooth)
+#         fft_power = np.abs(fft_coeff)**2
+#         features[f'{prefix}_fft_power_mean'] = np.mean(fft_power)
+#         features[f'{prefix}_fft_power_max'] = np.max(fft_power)
+#         features[f'{prefix}_fft_entropy'] = -np.sum((fft_power/np.sum(fft_power))*np.log2((fft_power/np.sum(fft_power))+1e-9))
+
+#         return features
+
+#     # --- Compute for all sensors ---
+#     features = {}
+#     features.update(compute_features(y_gas, "gas"))
+#     features.update(compute_features(y_temp, "temp"))
+#     features.update(compute_features(y_pres, "pres"))
+#     features.update(compute_features(y_hum, "hum"))
+
+#     # --- Cross-sensor ratios ---
+#     features["gas_temp_ratio"] = np.mean(y_gas)/ (np.mean(y_temp)+1e-9)
+#     features["gas_hum_ratio"] = np.mean(y_gas)/ (np.mean(y_hum)+1e-9)
+#     features["gas_pres_ratio"] = np.mean(y_gas)/ (np.mean(y_pres)+1e-9)
+
+#     if label:
+#         features["label"] = label
+
+#     return features
 
 
 import numpy as np
 from scipy.stats import skew, kurtosis
+from scipy.ndimage import uniform_filter1d
 
-
-def extract_features_from_data(data, label):
+def extract_features_from_data(data, label=None, normalize=True, log_transform=True):
     """
-    Extracts statistical, derivative, trend, peak, time-based, ratio, and AUC features
-    from BME688 sensor data including gas_resistance, temperature, pressure, and humidity.
-
-    data: list of dicts, each with keys:
-        "gas_resistance", "temperature", "pressure", "humidity"
+    Extract compound-discriminative features from BME688 sensor data.
+    Handles sensor-to-sensor deviation via per-sensor baseline normalization.
+    Measures drop_duration, drop_ratio, and recovery_slope from peak to recovery.
     """
-    
-    x = np.arange(len(data))  # time in seconds
-    
-    # Create arrays for each variable
+    x = np.arange(len(data))
+
+    # --- Extract raw sensor arrays ---
     y_gas = np.array([d["gas_resistance"] for d in data])
     y_temp = np.array([d["temperature"] for d in data])
     y_pres = np.array([d["pressure"] for d in data])
     y_hum = np.array([d["humidity"] for d in data])
 
+    # --- Normalize for sensor deviation (gas only) ---
+    if normalize:
+        baseline = np.median(y_gas[:10])  # clean-air baseline from start
+        y_gas = (y_gas - baseline) / (baseline + 1e-8)
+    
+    # --- Optional log transform to linearize exponential responses ---
+    if log_transform:
+        y_gas = np.log1p(np.abs(y_gas)) * np.sign(y_gas)
+
     def compute_features(y, prefix):
         features = {}
-        # --- Basic Statistics ---
-        features[f'{prefix}_mean'] = np.mean(y)
-        features[f'{prefix}_std'] = np.std(y)
-        features[f'{prefix}_min'] = np.min(y)
-        features[f'{prefix}_max'] = np.max(y)
-        features[f'{prefix}_median'] = np.median(y)
-        features[f'{prefix}_range'] = np.ptp(y)
-        features[f'{prefix}_q25'] = np.percentile(y, 25)
-        features[f'{prefix}_q75'] = np.percentile(y, 75)
-        features[f'{prefix}_skew'] = skew(y)
-        features[f'{prefix}_kurtosis'] = kurtosis(y)
+
+        # --- Smoothed signal ---
+        y_smooth = uniform_filter1d(y, size=3)
+
+        # --- Basic Stats ---
+        features[f'{prefix}_mean'] = np.mean(y_smooth)
+        features[f'{prefix}_std'] = np.std(y_smooth)
+        features[f'{prefix}_min'] = np.min(y_smooth)
+        features[f'{prefix}_max'] = np.max(y_smooth)
+        features[f'{prefix}_median'] = np.median(y_smooth)
+        features[f'{prefix}_range'] = np.ptp(y_smooth)
+        features[f'{prefix}_q25'] = np.percentile(y_smooth, 25)
+        features[f'{prefix}_q75'] = np.percentile(y_smooth, 75)
+        features[f'{prefix}_skew'] = skew(y_smooth)
+        features[f'{prefix}_kurtosis'] = kurtosis(y_smooth)
 
         # --- Derivatives ---
-        dy = np.diff(y) / np.diff(x)
+        dy = np.diff(y_smooth) / np.diff(x)
         features[f'{prefix}_dy_mean'] = np.mean(dy)
         features[f'{prefix}_dy_std'] = np.std(dy)
         features[f'{prefix}_dy_min'] = np.min(dy)
@@ -49,154 +163,76 @@ def extract_features_from_data(data, label):
         features[f'{prefix}_ddy_std'] = np.std(ddy)
 
         # --- Trend ---
-        slope = np.polyfit(x, y, 1)[0]
+        slope = np.polyfit(x, y_smooth, 1)[0]
         features[f'{prefix}_slope'] = slope
 
-        # --- Peaks ---
-        peaks = ((y[1:-1] > y[:-2]) & (y[1:-1] > y[2:])).sum()
-        features[f'{prefix}_peaks'] = peaks
-
-        # --- Area under curve ---
-        features[f'{prefix}_auc'] = np.trapezoid(y, x)
-        # --- Time-based Features ---
-        # Smooth signal slightly to reduce noise effect
-        from scipy.ndimage import uniform_filter1d
-        y_smooth = uniform_filter1d(y, size=3)
-        dy = np.diff(y_smooth) / np.diff(x)
-
-        # Steady-state detection — last time when |dy| < 1% of range
-        threshold = 0.03 * np.ptp(y_smooth)
-        steady_idx = np.where(np.abs(dy) < threshold)[0]
-        if len(steady_idx) > 0:
-            features[f'{prefix}_steady_time'] = steady_idx[-1]  # last stable moment
+        # --- Peak features ---
+        peaks = ((y_smooth[1:-1] > y_smooth[:-2]) & (y_smooth[1:-1] > y_smooth[2:])).nonzero()[0]
+        features[f'{prefix}_peaks_count'] = len(peaks)
+        if len(peaks) > 0:
+            features[f'{prefix}_peak_max'] = np.max(y_smooth[peaks])
+            features[f'{prefix}_peak_width'] = peaks[-1] - peaks[0]  # rough width
         else:
-            features[f'{prefix}_steady_time'] = len(y) - 1
+            features[f'{prefix}_peak_max'] = 0
+            features[f'{prefix}_peak_width'] = 0
 
-        # Rise/fall time (10% to 90% of total range)
+        # --- Rise/fall times ---
         y_min, y_max = np.min(y_smooth), np.max(y_smooth)
-        y_10 = y_min + 0.1 * (y_max - y_min)
-        y_90 = y_min + 0.9 * (y_max - y_min)
-
+        y_10 = y_min + 0.1*(y_max - y_min)
+        y_90 = y_min + 0.9*(y_max - y_min)
         if y_smooth[0] < y_smooth[-1]:
-            # Rising curve
             t10 = np.argmax(y_smooth >= y_10)
             t90 = np.argmax(y_smooth >= y_90)
         else:
-            # Falling curve
             t10 = np.argmax(y_smooth <= y_90)
             t90 = np.argmax(y_smooth <= y_10)
-
         features[f'{prefix}_rise_time'] = abs(t90 - t10)
 
-        # Area ratio (rise vs decay)
-        # Detect whether it’s a peak (rising then falling) or a dip (falling then rising)
-        if y_smooth[0] < y_smooth[-1]:
-            mid_idx = np.argmax(y_smooth)  # peak for rising curve
-        else:
-            mid_idx = np.argmin(y_smooth)  # valley for falling curve
-
-        # area_rise = np.trapezoid(y_smooth[:mid_idx+1], x[:mid_idx+1])
-        # area_decay = np.trapezoid(y_smooth[mid_idx:], x[mid_idx:])
-        # features[f'{prefix}_area_ratio'] = abs(area_rise / area_decay) if area_decay != 0 else 0
+        # --- Area under curve and area ratio ---
+        mid_idx = np.argmax(y_smooth) if y_smooth[0] < y_smooth[-1] else np.argmin(y_smooth)
         area_rise = np.trapezoid(y_smooth[:mid_idx+1], x[:mid_idx+1])
         area_decay = np.trapezoid(y_smooth[mid_idx:], x[mid_idx:])
-        eps = 1e-3 * (y_max - y_min)  # small fraction of range
-        area_rise += eps
-        area_decay += eps
-        features[f'{prefix}_area_ratio'] = abs(area_rise / area_decay)
-        
+        eps = 1e-5 * (y_max - y_min)
+        features[f'{prefix}_area_ratio'] = abs((area_rise+eps)/(area_decay+eps))
+        features[f'{prefix}_auc'] = np.trapezoid(y_smooth, x)
+
+        # --- Drop / Recovery Analysis (standard for gas sensors) ---
+        peak_idx = np.argmax(y_smooth)
+        min_idx = np.argmin(y_smooth[peak_idx:]) + peak_idx
+        recovery_idx = min_idx + np.argmax(y_smooth[min_idx:] >= 0.9 * y_smooth[peak_idx])
+
+        drop_duration = recovery_idx - peak_idx
+        drop_ratio = y_smooth[min_idx] / (y_smooth[peak_idx] + 1e-9)
+        recovery_slope = (y_smooth[recovery_idx] - y_smooth[min_idx]) / (drop_duration + 1e-9)
+
+        features[f'{prefix}_drop_duration'] = drop_duration
+        features[f'{prefix}_drop_ratio'] = drop_ratio
+        features[f'{prefix}_recovery_slope'] = recovery_slope
+
+        # --- Frequency domain features ---
+        fft_coeff = np.fft.fft(y_smooth)
+        fft_power = np.abs(fft_coeff)**2
+        features[f'{prefix}_fft_power_mean'] = np.mean(fft_power)
+        features[f'{prefix}_fft_power_max'] = np.max(fft_power)
+        features[f'{prefix}_fft_entropy'] = -np.sum(
+            (fft_power/np.sum(fft_power)) * np.log2((fft_power/np.sum(fft_power))+1e-8)
+        )
 
         return features
 
-    # --- Compute features for all sensors ---
+    # --- Compute for all sensors ---
     features = {}
     features.update(compute_features(y_gas, "gas"))
     features.update(compute_features(y_temp, "temp"))
     features.update(compute_features(y_pres, "pres"))
     features.update(compute_features(y_hum, "hum"))
 
-    # --- Ratio Features ---
-    features["gas_std_over_mean"] = features["gas_std"] / (features["gas_mean"] + 1e-9)
-    features["gas_over_temp_corr"] = np.corrcoef(y_gas, y_temp)[0, 1]
-    features["gas_over_hum_corr"] = np.corrcoef(y_gas, y_hum)[0, 1]
-    features["gas_over_pres_corr"] = np.corrcoef(y_gas, y_pres)[0, 1]
+    # --- Cross-sensor ratios ---
+    features["gas_temp_ratio"] = np.mean(y_gas)/ (np.mean(y_temp)+1e-8)
+    features["gas_hum_ratio"] = np.mean(y_gas)/ (np.mean(y_hum)+1e-8)
+    features["gas_pres_ratio"] = np.mean(y_gas)/ (np.mean(y_pres)+1e-8)
 
     if label:
         features["label"] = label
-    
+
     return features
-
-
-# def extract_features_from_data(data):
-#     x = np.array([])
-#     y = np.array([])
-#     for idx, value in enumerate(data):
-#         y = np.append(y, value["gas_resistance"])
-#         x  = np.append(x, idx)
-
-#     print(x)
-#     print(y)
-#     features = {}
-#     # Statistical
-#     features['mean'] = np.mean(y)
-#     features['std'] = np.std(y)
-#     features['min'] = np.min(y)
-#     features['max'] = np.max(y)
-#     features['median'] = np.median(y)
-#     features['range'] = np.ptp(y)
-#     features['q25'] = np.percentile(y, 25)
-#     features['q75'] = np.percentile(y, 75)
-#     features['skew'] = skew(y)
-#     features['kurtosis'] = kurtosis(y)
-    
-#     # Derivatives
-#     dy = np.diff(y) / np.diff(x)
-#     features['dy_mean'] = np.mean(dy)
-#     features['dy_std'] = np.std(dy)
-#     features['dy_min'] = np.min(dy)
-#     features['dy_max'] = np.max(dy)
-    
-#     ddy = np.diff(dy) / np.diff(x[:-1])
-#     features['ddy_mean'] = np.mean(ddy)
-#     features['ddy_std'] = np.std(ddy)
-    
-#     # Trend
-#     slope = np.polyfit(x, y, 1)[0]
-#     features['slope'] = slope
-    
-#     # Peak count
-#     peaks = ((y[1:-1] > y[:-2]) & (y[1:-1] > y[2:])).sum()
-#     features['peaks'] = peaks
-    
-#     # Area under curve
-#     features['auc'] = np.trapezoid(y, x)
-    
-#     print(features)
-#     return features
-
-
-# def calculate_derivative(data):
-#     features = {}
-#     results = []
-
-#     x = np.array([])
-#     y = np.array([])
-#     for idx, value in enumerate(data):
-#         y = np.append(y, value["gas_resistance"])
-#         x  = np.append(x, idx)
-        
-
-#     features['mean'] = np.mean(y)
-#     features['std'] = np.std(y)
-#     features['min'] = np.min(y)
-#     features['max'] = np.max(y)
-#     features['median'] = np.median(y)
-#     features['range'] = np.ptp(y)
-
-#     dy_dx = np.gradient(y, x)
-#     features["dy_dx"] = dy_dx.tolist()
-
-#     # d2y_dx2 = np.gradient(dy_dx, x)
-
-
-#     return features

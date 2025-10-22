@@ -431,6 +431,18 @@ def enable_button(input_value):
 def handle_click(n_clicks, input_value, options, selected_points_store):
     ordered_data = extract_data_all_sensors(selected_points_store=selected_points_store, options=options)
     
+    
+    for entry in ordered_data:
+        entry['label'] = input_value
+
+    # Convert to DataFrame
+    df = pd.DataFrame(ordered_data)
+
+    # Save to CSV
+    csv_file = "sensor_labeled_data.csv"
+    df.to_csv(csv_file, index=False)
+
+    print(f"Data saved to {csv_file}")
     features = extract_features(ordered_data=ordered_data, label=input_value)
     
     export_features_to_json(features)

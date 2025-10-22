@@ -6,7 +6,7 @@ from datetime import datetime
 import csv
 
 # ---------------- CONFIG ----------------
-SERIAL_PORT = "/dev/cu.usbserial-0289722F"
+SERIAL_PORT = "/dev/cu.usbserial-0289714A"
 BAUDRATE = 115200
 MAX_BUFFER_LINES = 500
 

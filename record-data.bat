@@ -1,6 +1,6 @@
 @echo off
 REM === Python executable (change if needed) ===
-set PYTHON_EXE=python
+set PYTHON_EXE=py
 
 REM === Step 1: Start upload.py (port 8051) ===
 echo Starting upload.py...

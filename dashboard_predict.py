@@ -18,6 +18,7 @@ sensor_current_label = {}
 sensor_current_prob = {}
 baselines = {}
 active_drops = {}  # track active drop sessions (sid -> start_idx)
+last_recovery_index = {}  # track last index at which we recovered to avoid reusing old drops
 
 label_colors = {
     "cigarro": "#E60A0A",
@@ -93,45 +94,66 @@ def update_dashboard(n):
         drop_percentage = (1 - gas[-1] / baseline) * 100
         print(f"{sid} - {drop_percentage:.1f}%")
 
-        # --- Sliding / Drop logic ---
-        if sid not in active_drops:
-            # Not currently sliding, check if a new drop occurs
-            if len(drop_indices) > 0:
-                start_idx = max(drop_indices[0] - 5, 0)
-                active_drops[sid] = start_idx
-                print(f"[{sid}] New drop started at index {start_idx}")
-        else:
-            # Currently sliding
-            start_idx = active_drops[sid]
-            if drop_percentage <= 5:
-                # Recovery → stop sliding
-                print(f"[{sid}] Recovery detected → stop prediction")
-                active_drops.pop(sid, None)
-                sensor_current_label[sid] = None
-                slide_df = pd.DataFrame()
-                predicted_label = None
-            else:
-                # Keep sliding from original drop start
-                end_idx = len(df)
-                if end_idx - start_idx >= SLIDDING_WINDOW:
-                    slide_df = df.iloc[end_idx - SLIDDING_WINDOW:end_idx].copy()
-                else:
-                    slide_df = df.iloc[start_idx:end_idx].copy()
+        # --- Sliding / Drop logic with robust reset + new-drop gating ---
+        # 1) If currently sliding and recovered -> clear all sliding/prediction state and record recovery index
+        if sid in active_drops and drop_percentage <= 5:
+            print(f"[{sid}] Recovery detected → fully reset state")
+            # set last recovery index to last sample index so future drops must start after this
+            last_recovery_index[sid] = len(df) - 1
+            # clear sliding & prediction state
+            active_drops.pop(sid, None)
+            sensor_current_label.pop(sid, None)
+            sensor_current_prob.pop(sid, None) if sid in sensor_current_prob else None
+            # ensure no slide window used this iteration
+            slide_df = pd.DataFrame()
+            predicted_label = None
 
+        # 2) If not currently sliding, look for a new drop index that is after last_recovery_index (if any)
+        if sid not in active_drops:
+            if len(drop_indices) > 0:
+                # filter drop indices to be strictly after last recovery (if exists)
+                last_rec = last_recovery_index.get(sid, -1)
+                valid_indices = [i for i in drop_indices if i > last_rec]
+                if len(valid_indices) > 0:
+                    start_idx = max(valid_indices[0] - 5, 0)
+                    active_drops[sid] = start_idx
+                    # when we start a fresh drop, clear previous probabilities so UI shows fresh prediction
+                    sensor_current_prob[sid] = 0
+                    print(f"[{sid}] New drop started at index {start_idx} (last_rec={last_rec})")
+
+        # 3) If sliding active, build the sliding window anchored on that start index
+        if sid in active_drops:
+            start_idx = active_drops[sid]
+            end_idx = len(df)
+            # create sliding window that moves to the most recent data but keeps event anchored
+            if end_idx - start_idx >= SLIDDING_WINDOW:
+                slide_df = df.iloc[end_idx - SLIDDING_WINDOW:end_idx].copy()
+            else:
+                slide_df = df.iloc[start_idx:end_idx].copy()
+
+        # --- Prediction (only if slide_df has data) ---
         probs = np.array([0, 0])
         if not slide_df.empty and len(slide_df) >= THRESOLD_PREDICTION:
             probs, predicted_label = get_prediction(slide_df)
             sensor_current_label[sid] = predicted_label
-            print(f"[{sid}] Sliding prediction → {predicted_label}")
+            sensor_current_prob[sid] = probs.max()
+            print(f"[{sid}] Sliding prediction → {predicted_label} ({probs.max()*100:.1f}%)")
         else:
+            # do not trigger prediction when there's no slide window
             predicted_label = sensor_current_label.get(sid, None)
 
         # --- Prediction card ---
         if predicted_label:
+            prob_display = (sensor_current_prob.get(sid, probs).max() * 100) if isinstance(sensor_current_prob.get(sid, probs), np.ndarray) or isinstance(sensor_current_prob.get(sid, probs), float) else (probs.max() * 100)
+            # ensure prob_display is a float
+            try:
+                prob_display = float(prob_display)
+            except Exception:
+                prob_display = probs.max() * 100
             prediction_cards.append(
                 html.Div([
                     html.H4(f"Sensor {sid}", style={"margin": "0"}),
-                    html.P(f"{predicted_label} ({probs.max() * 100:.1f}%)", style={"margin": "0"})
+                    html.P(f"{predicted_label} ({prob_display:.1f}%)", style={"margin": "0"})
                 ], style={
                     "padding": "10px",
                     "color": "white",

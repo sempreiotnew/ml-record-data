@@ -94,6 +94,17 @@ def update_dashboard(n):
         drop_percentage = (1 - gas[-1] / baseline) * 100
         print(f"{sid} - {drop_percentage:.1f}%")
 
+        if drop_percentage <= -10:
+            print(f"[{sid}] Extreme negative spike → reset baseline")
+            baselines[sid] = gas[-1]
+            drop_percentage = 0
+            # clear any active drop / prediction state
+            if sid in active_drops:
+                active_drops.pop(sid)
+            sensor_current_label.pop(sid, None)
+            sensor_current_prob.pop(sid, None) if sid in sensor_current_prob else None
+            last_recovery_index[sid] = len(df) - 1        
+
         # --- Sliding / Drop logic with robust reset + new-drop gating ---
         # 1) If currently sliding and recovered -> clear all sliding/prediction state and record recovery index
         if sid in active_drops and drop_percentage <= 5:
